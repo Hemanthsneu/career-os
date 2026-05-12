@@ -83,7 +83,7 @@ type RemotivePayload = { jobs: RemotiveJob[] };
 
 export async function fetchRemotive(): Promise<Job[]> {
   const data = await fetchJson<RemotivePayload>(
-    "https://remotive.com/api/remote-jobs?limit=120"
+    "https://remotive.com/api/remote-jobs"
   );
   return (data.jobs ?? []).map((j) => {
     const d = safeDate(j.publication_date);
@@ -127,10 +127,19 @@ type MuseJob = {
 type MusePayload = { results: MuseJob[]; page_count?: number };
 
 export async function fetchTheMuse(): Promise<Job[]> {
-  const url =
-    "https://www.themuse.com/api/public/jobs?descending=true&category=Software%20Engineering&category=Data%20Science&category=Product&category=Design&page=0";
-  const data = await fetchJson<MusePayload>(url);
-  return (data.results ?? []).map((j) => {
+  const baseQs =
+    "descending=true&category=Software%20Engineering&category=Data%20Science&category=Product&category=Design";
+  const pages = await Promise.allSettled(
+    [0, 1, 2, 3, 4].map((p) =>
+      fetchJson<MusePayload>(
+        `https://www.themuse.com/api/public/jobs?${baseQs}&page=${p}`
+      )
+    )
+  );
+  const jobs: MuseJob[] = pages.flatMap((r) =>
+    r.status === "fulfilled" ? r.value.results ?? [] : []
+  );
+  return jobs.map((j) => {
     const d = safeDate(j.publication_date);
     const loc = (j.locations ?? []).map((l) => l.name).join(", ") || "Unspecified";
     return {

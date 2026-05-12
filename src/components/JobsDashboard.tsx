@@ -6,11 +6,16 @@ import type { Job, JobSource, JobsResponse } from "@/lib/jobs/types";
 
 const STORAGE_KEY = "career-os-dashboard-v1";
 
+type SortOption = "newest" | "oldest" | "company" | "title";
+
 type Stored = {
   query: string;
   remoteOnly: boolean;
   within: "day" | "week" | "month" | "any";
   sources: JobSource[];
+  sort?: SortOption;
+  savedOnly?: boolean;
+  companies?: string[];
 };
 
 const WITHIN_OPTIONS: { value: Stored["within"]; label: string; ms?: number }[] = [
@@ -18,6 +23,13 @@ const WITHIN_OPTIONS: { value: Stored["within"]; label: string; ms?: number }[] 
   { value: "week", label: "Past week", ms: 7 * 24 * 60 * 60 * 1000 },
   { value: "month", label: "Past month", ms: 30 * 24 * 60 * 60 * 1000 },
   { value: "any", label: "Anytime" },
+];
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "company", label: "Company A→Z" },
+  { value: "title", label: "Title A→Z" },
 ];
 
 function loadStored(): Partial<Stored> {
@@ -67,6 +79,9 @@ export function JobsDashboard() {
   const [sources, setSources] = useState<Set<JobSource>>(
     () => new Set(defaultSources)
   );
+  const [sort, setSort] = useState<SortOption>("newest");
+  const [savedOnly, setSavedOnly] = useState(false);
+  const [companies, setCompanies] = useState<Set<string>>(new Set());
   const [hydrated, setHydrated] = useState(false);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
 
@@ -76,6 +91,9 @@ export function JobsDashboard() {
     if (d.remoteOnly != null) setRemoteOnly(d.remoteOnly);
     if (d.within != null) setWithin(d.within);
     if (d.sources?.length) setSources(new Set(d.sources));
+    if (d.sort) setSort(d.sort);
+    if (d.savedOnly != null) setSavedOnly(d.savedOnly);
+    if (d.companies?.length) setCompanies(new Set(d.companies));
     try {
       const sav = localStorage.getItem("career-os-saved-jobs");
       if (sav) setSavedIds(new Set(JSON.parse(sav) as string[]));
@@ -90,8 +108,11 @@ export function JobsDashboard() {
       remoteOnly,
       within,
       sources: [...sources],
+      sort,
+      savedOnly,
+      companies: [...companies],
     });
-  }, [hydrated, query, remoteOnly, within, sources]);
+  }, [hydrated, query, remoteOnly, within, sources, sort, savedOnly, companies]);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -116,6 +137,13 @@ export function JobsDashboard() {
     fetchJobs();
   }, [hydrated, fetchJobs]);
 
+  const allCompanies = useMemo(() => {
+    if (!data) return [] as string[];
+    const set = new Set<string>();
+    for (const j of data.jobs) set.add(j.company);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [data]);
+
   const filtered = useMemo<Job[]>(() => {
     if (!data) return [];
     const q = query.trim().toLowerCase();
@@ -123,14 +151,27 @@ export function JobsDashboard() {
       const opt = WITHIN_OPTIONS.find((o) => o.value === within);
       return opt?.ms ? Date.now() - opt.ms : 0;
     })();
-    return data.jobs.filter((j) => {
+    const out = data.jobs.filter((j) => {
+      if (savedOnly && !savedIds.has(j.id)) return false;
       if (remoteOnly && !j.remote) return false;
       if (cutoff && j.publishedAtTs < cutoff) return false;
+      if (companies.size && !companies.has(j.company)) return false;
       if (!q) return true;
       const hay = `${j.title} ${j.company} ${j.location} ${j.tags.join(" ")} ${j.description ?? ""}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [data, query, remoteOnly, within]);
+    switch (sort) {
+      case "oldest":
+        return out.sort((a, b) => a.publishedAtTs - b.publishedAtTs);
+      case "company":
+        return out.sort((a, b) => a.company.localeCompare(b.company));
+      case "title":
+        return out.sort((a, b) => a.title.localeCompare(b.title));
+      case "newest":
+      default:
+        return out.sort((a, b) => b.publishedAtTs - a.publishedAtTs);
+    }
+  }, [data, query, remoteOnly, within, sort, savedOnly, savedIds, companies]);
 
   const toggleSource = useCallback((s: JobSource) => {
     setSources((prev) => {
@@ -181,7 +222,7 @@ export function JobsDashboard() {
       </header>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-4">
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Search title, company, tag
@@ -210,6 +251,22 @@ export function JobsDashboard() {
               ))}
             </select>
           </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Sort by
+            </label>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortOption)}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -221,6 +278,15 @@ export function JobsDashboard() {
               className="size-4 rounded border-zinc-600 bg-zinc-900 text-emerald-500 focus:ring-emerald-500/30"
             />
             Remote only
+          </label>
+          <label className="flex items-center gap-2 text-xs text-zinc-300">
+            <input
+              type="checkbox"
+              checked={savedOnly}
+              onChange={(e) => setSavedOnly(e.target.checked)}
+              className="size-4 rounded border-zinc-600 bg-zinc-900 text-amber-500 focus:ring-amber-500/30"
+            />
+            ★ Saved only ({savedIds.size})
           </label>
           <span className="text-xs text-zinc-500">·</span>
           <span className="text-xs text-zinc-500">Sources:</span>
@@ -242,6 +308,44 @@ export function JobsDashboard() {
             ))}
           </div>
         </div>
+
+        {allCompanies.length > 0 && (
+          <details className="mt-3">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-300">
+              Filter by company ({companies.size}/{allCompanies.length})
+            </summary>
+            <div className="mt-2 flex flex-wrap gap-1.5 max-h-48 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+              <button
+                type="button"
+                onClick={() => setCompanies(new Set())}
+                className="rounded-md border border-zinc-700 bg-zinc-800/50 px-2 py-1 text-[11px] font-medium text-zinc-300 hover:bg-zinc-700"
+              >
+                Clear
+              </button>
+              {allCompanies.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() =>
+                    setCompanies((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(c)) next.delete(c);
+                      else next.add(c);
+                      return next;
+                    })
+                  }
+                  className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                    companies.has(c)
+                      ? "bg-sky-500/20 border border-sky-500/40 text-sky-300"
+                      : "border border-zinc-700 bg-zinc-800/30 text-zinc-400 hover:bg-zinc-700"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
       </section>
 
       {data && (
