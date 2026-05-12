@@ -11,6 +11,8 @@ import {
 } from "@/lib/job-search/boards";
 import {
   GOOGLE_LIMITS,
+  TIME_FILTERS,
+  type TimeFilter,
   buildQuery,
   googleSearchUrl,
   measure,
@@ -25,6 +27,7 @@ type Stored = {
   locationsText: string;
   extra: string;
   selectedIds: string[];
+  timeFilter?: TimeFilter;
 };
 
 function loadStored(): Partial<Stored> {
@@ -56,6 +59,7 @@ export function JobSearchLauncher() {
   const [rolesText, setRolesText] = useState("");
   const [locationsText, setLocationsText] = useState("");
   const [extra, setExtra] = useState("");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("w");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
     const s = new Set<string>();
     BOARDS.forEach((b) => {
@@ -74,6 +78,7 @@ export function JobSearchLauncher() {
     if (d.locationsText != null) setLocationsText(d.locationsText);
     if (d.extra != null) setExtra(d.extra);
     if (d.selectedIds?.length) setSelectedIds(new Set(d.selectedIds));
+    if (d.timeFilter) setTimeFilter(d.timeFilter);
     setHydrated(true);
   }, []);
 
@@ -109,8 +114,9 @@ export function JobSearchLauncher() {
       locationsText,
       extra,
       selectedIds: [...selectedIds],
+      timeFilter,
     });
-  }, [hydrated, rolesText, locationsText, extra, selectedIds]);
+  }, [hydrated, rolesText, locationsText, extra, selectedIds, timeFilter]);
 
   const toggleBoard = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -152,8 +158,8 @@ export function JobSearchLauncher() {
         return;
       }
     }
-    window.open(googleSearchUrl(query), "_blank", "noopener,noreferrer");
-  }, [hosts.length, query]);
+    window.open(googleSearchUrl(query, timeFilter), "_blank", "noopener,noreferrer");
+  }, [hosts.length, query, timeFilter]);
 
   const copyQuery = useCallback(async () => {
     if (!query) {
@@ -189,11 +195,11 @@ export function JobSearchLauncher() {
     }
     queries.forEach((q, i) => {
       window.setTimeout(
-        () => window.open(googleSearchUrl(q), "_blank", "noopener,noreferrer"),
+        () => window.open(googleSearchUrl(q, timeFilter), "_blank", "noopener,noreferrer"),
         i * 400
       );
     });
-  }, [hosts, rolesText, locationsText, extra]);
+  }, [hosts, rolesText, locationsText, extra, timeFilter]);
 
   const boardsByCategory = useMemo(() => {
     const grouped: Record<string, Board[]> = {};
@@ -262,6 +268,33 @@ export function JobSearchLauncher() {
           value={extra}
           onChange={(e) => setExtra(e.target.value)}
         />
+      </section>
+
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Posted within
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {TIME_FILTERS.map((tf) => (
+            <button
+              key={tf.value}
+              type="button"
+              onClick={() => setTimeFilter(tf.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                timeFilter === tf.value
+                  ? "bg-sky-500 text-zinc-950"
+                  : "border border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700"
+              }`}
+            >
+              {tf.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-zinc-500">
+          Uses Google&apos;s{" "}
+          <code className="text-zinc-400">tbs=qdr</code> filter — most reliable for
+          ATS pages with publish dates.
+        </p>
       </section>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">

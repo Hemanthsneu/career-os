@@ -90,6 +90,19 @@ export function splitIntoQueries(hosts: string[], state: Omit<SearchFormState, "
 
 export const GOOGLE_LIMITS = { MAX_WORDS, MAX_CHARS } as const;
 
-export function googleSearchUrl(query: string): string {
-  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+export type TimeFilter = "any" | "h" | "d" | "w" | "m" | "y";
+
+export const TIME_FILTERS: { value: TimeFilter; label: string }[] = [
+  { value: "any", label: "Anytime" },
+  { value: "h", label: "Past hour" },
+  { value: "d", label: "Past 24 hours" },
+  { value: "w", label: "Past week" },
+  { value: "m", label: "Past month" },
+  { value: "y", label: "Past year" },
+];
+
+export function googleSearchUrl(query: string, timeFilter: TimeFilter = "any"): string {
+  const base = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  if (timeFilter === "any") return base;
+  return `${base}&tbs=qdr:${timeFilter}`;
 }
